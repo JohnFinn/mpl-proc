@@ -1,28 +1,12 @@
 #!/usr/bin/env python3
+import time
+import select
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 import itertools
 import sys
-
-class TypedEventSource:
-
-    def __init__(self):
-        self.callbacks = set()
-
-    def add_callback(self, callback):
-        self.callbacks.add(callback)
-
-    def remove_callback(self, callback):
-        self.callbacks.remove(callback)
-
-    def start(self):
-        pass
-
-    def stop(self):
-        pass
-
 
 fig, ax = plt.subplots()
 
@@ -33,17 +17,22 @@ lines = [
 
 y_data = [[] for _ in sys.argv[1:]]
 max_x = 1
+crt_lim = 1
 
 def init():
-    ax.set_xlim(0, 20)
+    ax.set_xlim(0, 1)
     ax.set_ylim(0, 20)
     return lines
 
 def update(nums):
+    global crt_lim
     global max_x
     max_x += 1
+    if max_x >= crt_lim:
+        crt_lim *= 8
+        ax.set_xlim(0, crt_lim)
+
     x_data.append(max_x)
-    # ax.set_xlim(0, frame)
     # ax.set_ylim(min_y * 1.1, max_y * 1.1)
     for next_num, ydata, ln in zip(nums, y_data, lines):
         ydata.append(next_num)
@@ -51,13 +40,23 @@ def update(nums):
 
     return lines
 
-def read_lines():
-    for line in sys.stdin:
-        yield [float(i) for i in line.split()]
-
 
 if __name__ == '__main__':
-    ani = FuncAnimation(fig, update, frames=read_lines(), interval=0, repeat=True, # deletes the whole plot when resizing
-                    init_func=init, blit=True)
+    init()
     plt.legend()
-    plt.show()
+    plt.show(block=False)
+
+    poller = select.poll()
+    poller.register(0, select.POLLIN)
+
+    while True:
+        res = poller.poll(0)
+        if res:
+            line = input()
+            nums = [float(i) for i in line.split()]
+            update(nums)
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+        else:
+            fig.canvas.flush_events()
+            time.sleep(0.01)
