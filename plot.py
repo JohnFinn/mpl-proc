@@ -1,28 +1,38 @@
 #!/usr/bin/env python3
+import argparse
 import time
 import select
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 import itertools
 import sys
 
+parser = argparse.ArgumentParser()
+parser.add_argument('labels', nargs='+')
+parser.add_argument('--output', default='/dev/null')
+
+args = parser.parse_args(sys.argv[1:])
+
+fig: matplotlib.figure.Figure
+ax: matplotlib.axes.Axes
 fig, ax = plt.subplots()
 
 x_data = []
 lines = [
-    ax.plot([], [], label=name)[0] for name in sys.argv[1:]
+    ax.plot([], [], label=name)[0] for name in args.labels
 ]
 
 y_data = [[] for _ in sys.argv[1:]]
 max_x = 1
-max_y, min_y = 0, 1
+max_y, min_y = 1, 0
 crt_lim = 1
 
 def init():
     ax.set_xlim(0, 1)
-    ax.set_ylim(10, 20)
+    ax.set_ylim(0, 20)
     return lines
 
 def update(nums):
@@ -58,13 +68,23 @@ if __name__ == '__main__':
     poller.register(0, select.POLLIN)
 
     while True:
+        do_break = False
+        if poller.poll(0) == [(0, select.POLLHUP)]:
+            break
         if poller.poll(0):
-            while poller.poll(0):
+            while poller.poll(0) == [(0, select.POLLIN)]:
                 line = sys.stdin.readline()
+                if line == '':
+                    do_break = True
+                    break
                 nums = [float(i) for i in line.split()]
                 update(nums)
+            if do_break:
+                break
             fig.canvas.draw()
             fig.canvas.flush_events()
         else:
             fig.canvas.flush_events()
             time.sleep(0.01)
+
+    fig.savefig(args.output)
