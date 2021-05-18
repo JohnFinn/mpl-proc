@@ -4,13 +4,18 @@ import matplotlib
 from matplotlib import pyplot
 from time import sleep
 from enum import Enum
+import marshal
+import types
+import time
 
 class Action(Enum):
     CREATE = 0
     CALL_METHOD_ASSIGN = 1
     CALL_METHOD_NOASSIGN = 2
-    DELETE = 3
-    STOP = 4
+    CALL_METHOD_DROPASSIGN = 3
+    DELETE = 4
+    STOP = 5
+    FUNCTION = 6
 
 class ProxyId:
 
@@ -48,6 +53,11 @@ class ProxyObject:
         else:
             return obj
 
+    def callmethod_dropassign(self, name: str, *args, **kwargs):
+        args = [ProxyId(a._id) if isinstance(a, ProxyObject) else a for a in args]
+        kwargs = {key: ProxyId(a._id) if isinstance(a, ProxyObject) else a for key, a in kwargs.items()}
+        self.conn.send((Action.CALL_METHOD_NOASSIGN, self._id, name, args, kwargs))
+
     def __del__(self):
         if not self.conn.closed:
             self.conn.send((Action.DELETE, self._id))
@@ -79,6 +89,11 @@ class MplProc:
         self.proxy_fig = ProxyObject(self.conn, 'fig')
         self.proxy_ax = ProxyObject(self.conn, 'ax')
         self.proc = Process(target=self.foo, args=(child_conn,))
+
+    def __del__(self):
+        self.stop()
+
+    def start(self):
         self.proc.start()
 
     def stop(self):
@@ -88,6 +103,9 @@ class MplProc:
 
     def new_proxy(self, ini):
         return ProxyObject.create(self.conn, ini)
+
+    def call_function(self, func, *args, **kwargs):
+        self.conn.send((Action.FUNCTION, marshal.dumps(func.__code__), args, kwargs))
 
     def foo(self, conn: Connection):
         fig: matplotlib.figure.Figure
@@ -104,6 +122,10 @@ class MplProc:
                 if action == Action.STOP:
                     running = False
                     break
+                elif action == Action.FUNCTION:
+                    code, args, kwargs = rest
+                    func = types.FunctionType(marshal.loads(code), globals(), 'func')
+                    func(objs, *args, **kwargs)
                 elif action == Action.CREATE:
                     newobj, = rest
                     objs[id(newobj)] = newobj
@@ -132,11 +154,17 @@ class MplProc:
                         conn.send(ex)
                     else:
                         conn.send(newobj)
+                elif action == Action.CALL_METHOD_DROPASSIGN:
+                    _id, method, args, kwargs = rest
+                    args = (objs[a._id] if isinstance(a, ProxyId) else a for a in args)
+                    kwargs = {key: objs[a._id] if isinstance(a, ProxyId) else a for key, a in kwargs.items()}
+                    getattr(objs[_id], method)(*args, **kwargs)
             if not running:
                 break
 
             if drawn:
                 fig.canvas.draw()
+                fig.canvas.flush_events()
             while not conn.poll():
                 fig.canvas.flush_events()
-                sleep(0.001)
+                sleep(0.01)
