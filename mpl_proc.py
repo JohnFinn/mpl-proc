@@ -7,6 +7,7 @@ from enum import Enum
 import marshal
 import types
 import time
+import weakref
 
 class Action(Enum):
     CREATE = 0
@@ -89,9 +90,7 @@ class MplProc:
         self.proxy_fig = ProxyObject(self.conn, 'fig')
         self.proxy_ax = ProxyObject(self.conn, 'ax')
         self.proc = Process(target=self.foo, args=(child_conn,))
-
-    def __del__(self):
-        self.stop()
+        weakref.finalize(self, self.stop)
 
     def start(self):
         self.proc.start()
