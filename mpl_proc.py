@@ -91,11 +91,11 @@ class MplProc:
         self.proxy_ax = ProxyObject(self.conn, 'ax')
         self.proc = Process(target=self.foo, args=(child_conn,))
         weakref.finalize(self, self.stop)
-
-    def start(self):
         self.proc.start()
 
     def stop(self):
+        if self.conn.closed:
+            return
         self.conn.send((Action.STOP,))
         self.conn.close()
         self.proc.join()
